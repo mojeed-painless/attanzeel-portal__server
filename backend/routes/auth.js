@@ -1,6 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { validateLogin, validateRegister } = require('../middleware/validation');
 
 const router = express.Router();
 
@@ -8,7 +9,7 @@ const router = express.Router();
  * Login route - authenticate user and return JWT token
  * POST /api/auth/login
  */
-router.post('/login', async (req, res) => {
+router.post('/login', validateLogin, async (req, res) => {
   try {
     const { username, password } = req.body;
 
@@ -86,24 +87,16 @@ router.post('/login', async (req, res) => {
  * Register route - create new user (admin only in production)
  * POST /api/auth/register
  */
-router.post('/register', async (req, res) => {
+router.post('/register', validateRegister, async (req, res) => {
   try {
     const { username, password, email, firstName, lastName, role, admissionNumber, class: userClass, department } = req.body;
 
-    // Validation
-    if (!username || !password || !firstName || !lastName || !role) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide username, password, firstName, lastName, and role',
-      });
-    }
-
     // Check if user already exists
-    const existingUser = await User.findOne({ username });
+    const existingUser = await User.findOne({ $or: [{ username }, { email }] });
     if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: 'Username already exists',
+        message: existingUser.username === username ? 'Username already exists' : 'Email already exists',
       });
     }
 
