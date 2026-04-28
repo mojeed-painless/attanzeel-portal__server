@@ -84,11 +84,15 @@ app.use(cookieParser());
 const authRoutes = require('./backend/routes/auth');
 const settingsRoutes = require('./backend/routes/settings');
 const classesRoutes = require('./backend/routes/classes');
+const studentsRoutes = require('./backend/routes/students');
+const resultsRoutes = require('./backend/routes/results');
 
 // API routes
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/classes', classesRoutes);
+app.use('/api/students', studentsRoutes);
+app.use('/api/results', resultsRoutes);
 
 // Simple root route
 app.get('/', (req, res) => res.send('API is running...'));

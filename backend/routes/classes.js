@@ -11,10 +11,40 @@ router.get('/subjects/:className/:department', async (req, res) => {
   try {
     const { className, department } = req.params;
 
-    const classData = await Class.findOne({
-      class: className,
-      department: department,
+    const classData = await Class.findOne({ class: className, department });
+
+    if (!classData) {
+      return res.status(404).json({
+        success: false,
+        message: 'Class not found',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      class: classData.class,
+      department: classData.department,
+      subjects: classData.subjects,
+      subjectCount: classData.subjects.length,
     });
+  } catch (error) {
+    console.error('Get class subjects error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error retrieving class subjects',
+    });
+  }
+});
+
+/**
+ * Get subjects for a specific class only
+ * GET /api/classes/subjects/:className
+ */
+router.get('/subjects/:className', async (req, res) => {
+  try {
+    const { className } = req.params;
+
+    const classData = await Class.findOne({ class: className });
 
     if (!classData) {
       return res.status(404).json({

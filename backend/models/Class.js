@@ -11,8 +11,14 @@ const classSchema = new mongoose.Schema({
     required: true, // e.g., 'Kindergarten', 'Primary', 'Secondary'
   },
   subjects: [{
-    type: String,
-    required: true,
+    name: {
+      type: String,
+      required: true,
+    },
+    code: {
+      type: String,
+      required: true,
+    },
   }],
   createdAt: {
     type: Date,
