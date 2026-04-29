@@ -4,6 +4,41 @@ const Result = require('../models/Results');
 const User = require('../models/User');
 const { authMiddleware, authorize } = require('../middleware/auth');
 
+const getDepartmentFromQuery = (req) => {
+    const department = req.query.department;
+    return department ? decodeURIComponent(department) : undefined;
+};
+
+const findClass = (term, className, department) => {
+    if (!term) return undefined;
+    if (department) {
+        // First try exact match with department
+        let classData = term.classes.find(c => c.className === className && c.department === department);
+        if (classData) return classData;
+        // Fallback: if no exact match, try classes without department (legacy data)
+        classData = term.classes.find(c => c.className === className && (!c.department || c.department === ''));
+        if (classData) return classData;
+    }
+    // No department specified: prefer classes without department, then any match
+    return term.classes.find(c => c.className === className && (!c.department || c.department === ''))
+        || term.classes.find(c => c.className === className);
+};
+
+const findOrCreateClass = (term, className, department) => {
+    let classData = findClass(term, className, department);
+    if (!classData) {
+        classData = {
+            className,
+            department: department || '',
+            approvalStatus: null,
+            removedSubjects: [],
+            students: []
+        };
+        term.classes.push(classData);
+    }
+    return classData;
+};
+
 // Get all results
 router.get('/', authMiddleware, async (req, res) => {
     try {
@@ -58,7 +93,8 @@ router.get('/:academicYear/:termName/:className', authMiddleware, async (req, re
         const term = result.terms.find(t => t.termName === termName);
         if (!term) return res.status(404).json({ message: 'Term not found' });
 
-        const classData = term.classes.find(c => c.className === className);
+        const department = getDepartmentFromQuery(req);
+        const classData = findClass(term, className, department);
         if (!classData) return res.status(404).json({ message: 'Class not found' });
 
         res.json(classData);
@@ -103,7 +139,8 @@ router.put('/:academicYear/:termName/:className/submit-approval', authMiddleware
         const term = result.terms.find(t => t.termName === termName);
         if (!term) return res.status(404).json({ message: 'Term not found' });
 
-        const classData = term.classes.find(c => c.className === className);
+        const department = getDepartmentFromQuery(req);
+        const classData = findClass(term, className, department);
         if (!classData) return res.status(404).json({ message: 'Class not found' });
 
         classData.approvalStatus = 'pending';
@@ -128,7 +165,8 @@ router.put('/:academicYear/:termName/:className/approve', authMiddleware, author
         const term = result.terms.find(t => t.termName === termName);
         if (!term) return res.status(404).json({ message: 'Term not found' });
 
-        const classData = term.classes.find(c => c.className === className);
+        const department = getDepartmentFromQuery(req);
+        const classData = findClass(term, className, department);
         if (!classData) return res.status(404).json({ message: 'Class not found' });
 
         classData.approvalStatus = 'approved';
@@ -153,7 +191,8 @@ router.put('/:academicYear/:termName/:className/reject', authMiddleware, authori
         const term = result.terms.find(t => t.termName === termName);
         if (!term) return res.status(404).json({ message: 'Term not found' });
 
-        const classData = term.classes.find(c => c.className === className);
+        const department = getDepartmentFromQuery(req);
+        const classData = findClass(term, className, department);
         if (!classData) return res.status(404).json({ message: 'Class not found' });
 
         classData.approvalStatus = null; // Reset to allow re-submission
@@ -178,11 +217,123 @@ router.get('/:academicYear/:termName/:className/status', authMiddleware, async (
         const term = result.terms.find(t => t.termName === termName);
         if (!term) return res.status(404).json({ message: 'Term not found' });
 
-        const classData = term.classes.find(c => c.className === className);
+        const department = getDepartmentFromQuery(req);
+        const classData = findClass(term, className, department);
         if (!classData) return res.status(404).json({ message: 'Class not found' });
 
         res.json({ approvalStatus: classData.approvalStatus });
     } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Update removed subjects for a class
+router.put('/:academicYear/:termName/:className/removed-subjects', authMiddleware, authorize('admin', 'teacher', 'staff'), async (req, res) => {
+    try {
+        const academicYear = decodeURIComponent(req.params.academicYear);
+        const termName = decodeURIComponent(req.params.termName);
+        const className = decodeURIComponent(req.params.className);
+        const { removedSubjects } = req.body;
+
+        if (!Array.isArray(removedSubjects)) {
+            return res.status(400).json({ message: 'removedSubjects must be an array' });
+        }
+
+        const mappedRemovedSubjects = removedSubjects.map(subject => ({
+            code: subject.code,
+            name: subject.name || ''
+        }));
+
+        // Try atomic update for existing class using arrayFilters
+        const department = getDepartmentFromQuery(req);
+        const updateResult = await Result.updateOne(
+            {
+                academicYear,
+                'terms.termName': termName,
+                'terms.classes.className': className,
+                $or: [
+                    { 'terms.classes.department': department || '' },
+                    { 'terms.classes.department': { $exists: false } },
+                    { 'terms.classes.department': '' }
+                ]
+            },
+            { $set: { 'terms.$[term].classes.$[class].removedSubjects': mappedRemovedSubjects } },
+            {
+                arrayFilters: [
+                    { 'term.termName': termName },
+                    {
+                        'class.className': className,
+                        $or: [
+                            { 'class.department': department || '' },
+                            { 'class.department': { $exists: false } },
+                            { 'class.department': '' }
+                        ]
+                    }
+                ]
+            }
+        );
+
+        if (updateResult.matchedCount > 0) {
+            res.json({ message: 'Removed subjects updated successfully' });
+            return;
+        }
+
+        // Fallback: create or update document if class doesn't exist
+        let result = await Result.findOne({ academicYear });
+        if (!result) {
+            // Create new result document if it doesn't exist
+            result = new Result({
+                academicYear,
+                terms: [{
+                    termName,
+                    classes: [{
+                        className,
+                        department: department || '',
+                        removedSubjects: mappedRemovedSubjects,
+                        students: [],
+                        approvalStatus: null
+                    }]
+                }]
+            });
+        } else {
+            let term = result.terms.find(t => t.termName === termName);
+            if (!term) {
+                // Create new term if it doesn't exist
+                term = {
+                    termName,
+                    classes: [{
+                        className,
+                        department: department || '',
+                        removedSubjects: mappedRemovedSubjects,
+                        students: [],
+                        approvalStatus: null
+                    }]
+                };
+                result.terms.push(term);
+            } else {
+                let classData = findClass(term, className, department);
+                if (!classData) {
+                    // Create new class if it doesn't exist
+                    classData = {
+                        className,
+                        department: department || '',
+                        removedSubjects: mappedRemovedSubjects,
+                        students: [],
+                        approvalStatus: null
+                    };
+                    term.classes.push(classData);
+                } else {
+                    // Update existing class
+                    classData.removedSubjects = mappedRemovedSubjects;
+                }
+            }
+        }
+
+        await result.save();
+
+        res.json({ message: 'Removed subjects updated successfully', removedSubjects: result.terms.find(t => t.termName === termName).classes.find(c => c.className === className && c.department === (department || ''))?.removedSubjects || [] });
+    } catch (error) {
+        console.error('Error updating removed subjects:', error);
         res.status(500).json({ message: error.message });
     }
 });

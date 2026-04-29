@@ -18,10 +18,22 @@ const resultSchema = new mongoose.Schema({
                 required: true,
                 trim: true
             },
+            department: {
+                type: String,
+                trim: true,
+                default: ''
+            },
             approvalStatus: {
                 type: String,
                 enum: ['pending', 'approved', 'rejected'],
                 default: null
+            },
+            removedSubjects: {
+                type: [{
+                    code: { type: String, trim: true },
+                    name: { type: String, trim: true }
+                }],
+                default: []
             },
             students: [{
                 studentId: {
@@ -67,5 +79,6 @@ const resultSchema = new mongoose.Schema({
 resultSchema.index({ academicYear: 1 });
 resultSchema.index({ 'terms.termName': 1 });
 resultSchema.index({ 'terms.classes.className': 1 });
+resultSchema.index({ 'terms.classes.department': 1 });
 
 module.exports = mongoose.model('Result', resultSchema);
