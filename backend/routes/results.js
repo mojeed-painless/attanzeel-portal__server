@@ -204,6 +204,32 @@ router.put('/:academicYear/:termName/:className/reject', authMiddleware, authori
     }
 });
 
+// Reverse approval (revert from approved back to pending)
+router.put('/:academicYear/:termName/:className/reverse-approval', authMiddleware, authorize('admin'), async (req, res) => {
+    try {
+        const academicYear = decodeURIComponent(req.params.academicYear);
+        const termName = decodeURIComponent(req.params.termName);
+        const className = decodeURIComponent(req.params.className);
+
+        const result = await Result.findOne({ academicYear });
+        if (!result) return res.status(404).json({ message: 'Results not found' });
+
+        const term = result.terms.find(t => t.termName === termName);
+        if (!term) return res.status(404).json({ message: 'Term not found' });
+
+        const department = getDepartmentFromQuery(req);
+        const classData = findClass(term, className, department);
+        if (!classData) return res.status(404).json({ message: 'Class not found' });
+
+        classData.approvalStatus = null; // Reset to pending
+        await result.save();
+
+        res.json({ message: 'Approval reversed' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
 // Get approval status
 router.get('/:academicYear/:termName/:className/status', authMiddleware, async (req, res) => {
     try {
@@ -354,6 +380,11 @@ router.put('/:academicYear/:termName/:className/:studentId', authMiddleware, aut
 
         console.log('PUT request for:', { academicYear, termName, className, studentId, scores, comments });
 
+        // Get user to determine department for SS classes
+        const user = await User.findById(studentId).select('username department');
+        const username = user?.username || '';
+        const department = user?.department || '';
+
         let result = await Result.findOne({ academicYear });
         console.log('Existing result found:', !!result);
 
@@ -369,15 +400,12 @@ router.put('/:academicYear/:termName/:className/:studentId', authMiddleware, aut
             console.log('Added new term:', termName);
         }
 
-        let classData = term.classes.find(c => c.className === className);
+        // Find class, considering department for SS classes
+        let classData = findClass(term, className, department);
         if (!classData) {
-            classData = { className, students: [] };
-            term.classes.push(classData);
-            console.log('Added new class:', className);
+            classData = findOrCreateClass(term, className, department);
+            console.log('Added new class:', className, 'department:', department);
         }
-
-        const user = await User.findById(studentId).select('username');
-        const username = user?.username || '';
 
         let student = classData.students.find(s => s.studentId.toString() === studentId);
         if (!student) {
