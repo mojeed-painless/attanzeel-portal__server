@@ -31,6 +31,11 @@ const userSchema = new mongoose.Schema(
       required: [true, 'Please provide a last name'],
       trim: true,
     },
+    title: {
+      type: String,
+      enum: ['Mr', 'Mrs', 'Miss'],
+      required: [function() { return this.role === 'staff'; }, 'Please provide a title'],
+    },
     role: {
       type: String,
       enum: ['student', 'staff', 'admin'],
@@ -51,7 +56,9 @@ const userSchema = new mongoose.Schema(
     },
     isActive: {
       type: Boolean,
-      default: true,
+      default: function() {
+        return this.role !== 'staff'; // Staff start inactive (pending approval), others active
+      },
     },
   },
   {

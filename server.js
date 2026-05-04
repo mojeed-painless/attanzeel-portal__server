@@ -46,7 +46,7 @@ const corsOptions = {
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
 };
 app.use(cors(corsOptions));
@@ -85,6 +85,7 @@ const authRoutes = require('./backend/routes/auth');
 const settingsRoutes = require('./backend/routes/settings');
 const classesRoutes = require('./backend/routes/classes');
 const studentsRoutes = require('./backend/routes/students');
+const staffRoutes = require('./backend/routes/staff');
 const resultsRoutes = require('./backend/routes/results');
 
 // API routes
@@ -92,6 +93,7 @@ app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/classes', classesRoutes);
 app.use('/api/students', studentsRoutes);
+app.use('/api/staff', staffRoutes);
 app.use('/api/results', resultsRoutes);
 
 // Simple root route

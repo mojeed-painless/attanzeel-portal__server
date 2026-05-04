@@ -51,6 +51,15 @@ const validateRegister = [
     .trim()
     .notEmpty().withMessage('Last name is required')
     .isLength({ min: 2 }).withMessage('Last name must be at least 2 characters'),
+  body('title')
+    .if(body('role').equals('staff'))
+    .trim()
+    .notEmpty().withMessage('Title is required')
+    .isIn(['Mr', 'Mrs', 'Miss']).withMessage('Invalid title'),
+  body('class')
+    .if(body('role').equals('staff'))
+    .trim()
+    .notEmpty().withMessage('Please select at least one class'),
   body('role')
     .isIn(['student', 'staff', 'admin']).withMessage('Invalid role'),
   handleValidationErrors,
