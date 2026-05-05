@@ -9,6 +9,21 @@ const getDepartmentFromQuery = (req) => {
     return department ? decodeURIComponent(department) : undefined;
 };
 
+const normalizeAcademicYear = (academicYear) => {
+    if (!academicYear || typeof academicYear !== 'string') return academicYear;
+    return academicYear.replace(/-/g, '/');
+};
+
+const getAcademicYearQuery = (academicYear) => {
+    if (!academicYear || typeof academicYear !== 'string') return academicYear;
+    const variants = new Set([
+        academicYear,
+        normalizeAcademicYear(academicYear),
+        academicYear.replace(/\//g, '-')
+    ]);
+    return { $in: Array.from(variants).filter(Boolean) };
+};
+
 const findClass = (term, className, department) => {
     if (!term) return undefined;
     if (department) {
@@ -53,9 +68,9 @@ router.get('/', authMiddleware, async (req, res) => {
 router.get('/:academicYear', authMiddleware, async (req, res) => {
     try {
         const academicYear = decodeURIComponent(req.params.academicYear);
-        const result = await Result.findOne({ academicYear })
+        const result = await Result.findOne({ academicYear: getAcademicYearQuery(academicYear) })
             .populate('terms.classes.students.studentId', 'firstName lastName email username name');
-        if (!result) return res.status(404).json({ message: 'Results not found for this academic year' });
+        if (!result) return res.json({});
         res.json(result);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -68,11 +83,11 @@ router.get('/:academicYear/:termName', authMiddleware, async (req, res) => {
         const academicYear = decodeURIComponent(req.params.academicYear);
         const termName = decodeURIComponent(req.params.termName);
 
-        const result = await Result.findOne({ academicYear });
-        if (!result) return res.status(404).json({ message: 'Results not found for this academic year' });
+        const result = await Result.findOne({ academicYear: getAcademicYearQuery(academicYear) });
+        if (!result) return res.json({});
 
         const term = result.terms.find(t => t.termName === termName);
-        if (!term) return res.status(404).json({ message: 'Term not found' });
+        if (!term) return res.json({});
 
         res.json(term);
     } catch (error) {
@@ -87,15 +102,15 @@ router.get('/:academicYear/:termName/:className', authMiddleware, async (req, re
         const termName = decodeURIComponent(req.params.termName);
         const className = decodeURIComponent(req.params.className);
 
-        const result = await Result.findOne({ academicYear });
-        if (!result) return res.status(404).json({ message: 'Results not found for this academic year' });
+        const result = await Result.findOne({ academicYear: getAcademicYearQuery(academicYear) });
+        if (!result) return res.json({ students: [], removedSubjects: [], approvalStatus: null });
 
         const term = result.terms.find(t => t.termName === termName);
-        if (!term) return res.status(404).json({ message: 'Term not found' });
+        if (!term) return res.json({ students: [], removedSubjects: [], approvalStatus: null });
 
         const department = getDepartmentFromQuery(req);
         const classData = findClass(term, className, department);
-        if (!classData) return res.status(404).json({ message: 'Class not found' });
+        if (!classData) return res.json({ students: [], removedSubjects: [], approvalStatus: null });
 
         res.json(classData);
     } catch (error) {
@@ -107,16 +122,18 @@ router.get('/:academicYear/:termName/:className', authMiddleware, async (req, re
 router.post('/', authMiddleware, authorize('admin', 'teacher'), async (req, res) => {
     try {
         const { academicYear, terms } = req.body;
+        const normalizedYear = normalizeAcademicYear(academicYear);
 
-        let result = await Result.findOne({ academicYear });
+        let result = await Result.findOne({ academicYear: getAcademicYearQuery(academicYear) });
 
         if (result) {
             // Update existing
+            result.academicYear = normalizedYear;
             result.terms = terms;
             await result.save();
         } else {
             // Create new
-            result = new Result({ academicYear, terms });
+            result = new Result({ academicYear: normalizedYear, terms });
             await result.save();
         }
 
@@ -133,7 +150,7 @@ router.put('/:academicYear/:termName/:className/submit-approval', authMiddleware
         const termName = decodeURIComponent(req.params.termName);
         const className = decodeURIComponent(req.params.className);
 
-        const result = await Result.findOne({ academicYear });
+        const result = await Result.findOne({ academicYear: getAcademicYearQuery(academicYear) });
         if (!result) return res.status(404).json({ message: 'Results not found' });
 
         const term = result.terms.find(t => t.termName === termName);
@@ -159,7 +176,7 @@ router.put('/:academicYear/:termName/:className/approve', authMiddleware, author
         const termName = decodeURIComponent(req.params.termName);
         const className = decodeURIComponent(req.params.className);
 
-        const result = await Result.findOne({ academicYear });
+        const result = await Result.findOne({ academicYear: getAcademicYearQuery(academicYear) });
         if (!result) return res.status(404).json({ message: 'Results not found' });
 
         const term = result.terms.find(t => t.termName === termName);
@@ -185,7 +202,7 @@ router.put('/:academicYear/:termName/:className/reject', authMiddleware, authori
         const termName = decodeURIComponent(req.params.termName);
         const className = decodeURIComponent(req.params.className);
 
-        const result = await Result.findOne({ academicYear });
+        const result = await Result.findOne({ academicYear: getAcademicYearQuery(academicYear) });
         if (!result) return res.status(404).json({ message: 'Results not found' });
 
         const term = result.terms.find(t => t.termName === termName);
@@ -211,7 +228,7 @@ router.put('/:academicYear/:termName/:className/reverse-approval', authMiddlewar
         const termName = decodeURIComponent(req.params.termName);
         const className = decodeURIComponent(req.params.className);
 
-        const result = await Result.findOne({ academicYear });
+        const result = await Result.findOne({ academicYear: getAcademicYearQuery(academicYear) });
         if (!result) return res.status(404).json({ message: 'Results not found' });
 
         const term = result.terms.find(t => t.termName === termName);
@@ -237,15 +254,15 @@ router.get('/:academicYear/:termName/:className/status', authMiddleware, async (
         const termName = decodeURIComponent(req.params.termName);
         const className = decodeURIComponent(req.params.className);
 
-        const result = await Result.findOne({ academicYear });
-        if (!result) return res.status(404).json({ message: 'Results not found' });
+        const result = await Result.findOne({ academicYear: getAcademicYearQuery(academicYear) });
+        if (!result) return res.json({ approvalStatus: null });
 
         const term = result.terms.find(t => t.termName === termName);
-        if (!term) return res.status(404).json({ message: 'Term not found' });
+        if (!term) return res.json({ approvalStatus: null });
 
         const department = getDepartmentFromQuery(req);
         const classData = findClass(term, className, department);
-        if (!classData) return res.status(404).json({ message: 'Class not found' });
+        if (!classData) return res.json({ approvalStatus: null });
 
         res.json({ approvalStatus: classData.approvalStatus });
     } catch (error) {
@@ -274,7 +291,7 @@ router.put('/:academicYear/:termName/:className/removed-subjects', authMiddlewar
         const department = getDepartmentFromQuery(req);
         const updateResult = await Result.updateOne(
             {
-                academicYear,
+                academicYear: getAcademicYearQuery(academicYear),
                 'terms.termName': termName,
                 'terms.classes.className': className,
                 $or: [
@@ -305,11 +322,11 @@ router.put('/:academicYear/:termName/:className/removed-subjects', authMiddlewar
         }
 
         // Fallback: create or update document if class doesn't exist
-        let result = await Result.findOne({ academicYear });
+        let result = await Result.findOne({ academicYear: getAcademicYearQuery(academicYear) });
         if (!result) {
             // Create new result document if it doesn't exist
             result = new Result({
-                academicYear,
+                academicYear: normalizeAcademicYear(academicYear),
                 terms: [{
                     termName,
                     classes: [{
@@ -385,7 +402,7 @@ router.put('/:academicYear/:termName/:className/:studentId', authMiddleware, aut
         const username = user?.username || '';
         const department = user?.department || '';
 
-        let result = await Result.findOne({ academicYear });
+        const result = await Result.findOne({ academicYear: getAcademicYearQuery(academicYear) });
         console.log('Existing result found:', !!result);
 
         if (!result) {
@@ -431,7 +448,7 @@ router.put('/:academicYear/:termName/:className/:studentId', authMiddleware, aut
 
 router.delete('/:academicYear', authMiddleware, authorize('admin'), async (req, res) => {
     try {
-        const result = await Result.findOneAndDelete({ academicYear: req.params.academicYear });
+        const result = await Result.findOneAndDelete({ academicYear: getAcademicYearQuery(req.params.academicYear) });
         if (!result) return res.status(404).json({ message: 'Results not found' });
         res.json({ message: 'Results deleted successfully' });
     } catch (error) {
