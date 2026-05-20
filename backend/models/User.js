@@ -59,6 +59,36 @@ const userSchema = new mongoose.Schema(
         return this.role !== 'staff'; // Staff start inactive (pending approval), others active
       },
     },
+      // Profile information fields
+      dateOfBirth: {
+        type: String,
+        sparse: true,
+      },
+      gender: {
+        type: String,
+        enum: ['Male', 'Female', 'Other'],
+        sparse: true,
+      },
+      homeAddress: {
+        type: String,
+        sparse: true,
+      },
+      guardianName: {
+        type: String,
+        sparse: true,
+      },
+      contactNumber: {
+        type: String,
+        sparse: true,
+      },
+      whatsappNumber: {
+        type: String,
+        sparse: true,
+      },
+      profilePicture: {
+        type: String, // Store as Base64 or file path
+        sparse: true,
+      },
   },
   {
     timestamps: true,

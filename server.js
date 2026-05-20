@@ -9,6 +9,10 @@ const cookieParser = require('cookie-parser');
 
 // Load env vars
 dotenv.config();
+process.env.NODE_ENV = process.env.NODE_ENV || 'development';
+console.log('DEBUG NODE_ENV:', process.env.NODE_ENV);
+console.log('DEBUG MONGO_URI LOADED:', Boolean(process.env.MONGO_URI));
+console.log('DEBUG MONGO_URI PREFIX:', process.env.MONGO_URI ? process.env.MONGO_URI.substring(0, 30) : 'NOT SET');
 
 // Connect to database
 connectDB();
@@ -87,6 +91,7 @@ const classesRoutes = require('./backend/routes/classes');
 const studentsRoutes = require('./backend/routes/students');
 const staffRoutes = require('./backend/routes/staff');
 const resultsRoutes = require('./backend/routes/results');
+const profileRoutes = require('./backend/routes/profile');
 
 // API routes
 app.use('/api/auth', authLimiter, authRoutes);
@@ -94,7 +99,8 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/classes', classesRoutes);
 app.use('/api/students', studentsRoutes);
 app.use('/api/staff', staffRoutes);
-app.use('/api/results', resultsRoutes);
+app.use('/api/results', resultsRoutes); 
+app.use('/api/profile', profileRoutes);
 
 // Simple root route
 app.get('/', (req, res) => res.send('API is running...'));
