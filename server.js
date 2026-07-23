@@ -34,11 +34,16 @@ app.use(helmet({
 }));
 
 // 3. CORS configuration
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
+const defaultAllowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
   'https://portal.attanzeel.com'
 ];
+
+const allowedOrigins = (process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean)
+  : defaultAllowedOrigins
+).concat('https://portal.attanzeel.com').filter((origin, index, self) => self.indexOf(origin) === index);
 
 const corsOptions = {
   origin: function (origin, callback) {
