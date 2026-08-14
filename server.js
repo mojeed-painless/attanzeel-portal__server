@@ -93,6 +93,7 @@ app.use(cookieParser());
 // Routes
 const authRoutes = require('./backend/routes/auth');
 const settingsRoutes = require('./backend/routes/settings');
+const billsRoutes = require('./backend/routes/bills');
 const classesRoutes = require('./backend/routes/classes');
 const studentsRoutes = require('./backend/routes/students');
 const staffRoutes = require('./backend/routes/staff');
@@ -102,6 +103,7 @@ const profileRoutes = require('./backend/routes/profile');
 // API routes
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/bills', billsRoutes);
 app.use('/api/classes', classesRoutes);
 app.use('/api/students', studentsRoutes);
 app.use('/api/staff', staffRoutes);
