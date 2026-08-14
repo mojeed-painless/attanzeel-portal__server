@@ -20,15 +20,22 @@ const defaultItems = [
 ];
 
 /**
- * GET /api/bills
- * Return the single Bill document (create default if missing)
+ * GET /api/bills/:grade
+ * Return the Bill document for a specific grade (create default if missing)
  */
-router.get('/', async (req, res) => {
+router.get('/:grade', async (req, res) => {
   try {
-    let bill = await Bill.findOne();
+    const grade = decodeURIComponent(req.params.grade || '').trim();
+
+    if (!grade) {
+      return res.status(400).json({ success: false, message: 'Grade is required' });
+    }
+
+    let bill = await Bill.findOne({ grade });
 
     if (!bill) {
       bill = new Bill({
+        grade,
         items: defaultItems,
         accountNumber: '0004875547',
         bankName: 'JAIZ BANK',
@@ -41,30 +48,35 @@ router.get('/', async (req, res) => {
 
     return res.status(200).json({ success: true, bill });
   } catch (error) {
-    console.error('Error fetching bills:', error);
+    console.error('Error fetching bill:', error);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 /**
- * PUT /api/bills
- * Update bill document (admin only)
+ * PUT /api/bills/:grade
+ * Update bill document for a specific grade (admin only)
  */
-router.put('/', authMiddleware, authorize('admin'), async (req, res) => {
+router.put('/:grade', authMiddleware, authorize('admin'), async (req, res) => {
   try {
+    const grade = decodeURIComponent(req.params.grade || '').trim();
     const payload = req.body;
 
-    let bill = await Bill.findOne();
+    if (!grade) {
+      return res.status(400).json({ success: false, message: 'Grade is required' });
+    }
+
+    let bill = await Bill.findOne({ grade });
 
     if (!bill) {
-      bill = new Bill(payload);
+      bill = new Bill({ ...payload, grade });
     } else {
       // Replace fields that are allowed to be updated
       bill.items = payload.items || bill.items;
-      bill.accountNumber = payload.accountNumber || bill.accountNumber;
-      bill.bankName = payload.bankName || bill.bankName;
-      bill.accountName = payload.accountName || bill.accountName;
-      bill.accountType = payload.accountType || bill.accountType;
+      bill.accountNumber = payload.accountNumber ?? bill.accountNumber;
+      bill.bankName = payload.bankName ?? bill.bankName;
+      bill.accountName = payload.accountName ?? bill.accountName;
+      bill.accountType = payload.accountType ?? bill.accountType;
     }
 
     bill.updatedBy = req.user.id;
@@ -72,7 +84,7 @@ router.put('/', authMiddleware, authorize('admin'), async (req, res) => {
 
     return res.status(200).json({ success: true, bill });
   } catch (error) {
-    console.error('Error updating bills:', error);
+    console.error('Error updating bill:', error);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });

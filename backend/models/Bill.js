@@ -12,6 +12,12 @@ const billItemSchema = new mongoose.Schema(
 
 const billSchema = new mongoose.Schema(
   {
+    grade: {
+      type: String,
+      required: true,
+      trim: true,
+      unique: true,
+    },
     items: [billItemSchema],
     accountNumber: { type: String },
     bankName: { type: String },
