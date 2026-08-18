@@ -3,6 +3,8 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { validateLogin, validateRegister } = require('../middleware/validation');
 const { authMiddleware, authorize } = require('../middleware/auth');
+const emailService = require('../utils/email');
+const { generateVerificationCode, getVerificationCodeExpiry, isVerificationCodeExpired } = require('../utils/verification');
 
 const router = express.Router();
 
@@ -29,6 +31,16 @@ router.post('/login', validateLogin, async (req, res) => {
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials',
+      });
+    }
+
+    // Check if email is verified (for staff)
+    if (user.role === 'staff' && !user.emailVerified) {
+      return res.status(403).json({
+        success: false,
+        message: 'email_not_verified',
+        email: user.email,
+        requiresVerification: true,
       });
     }
 
@@ -86,7 +98,7 @@ router.post('/login', validateLogin, async (req, res) => {
 });
 
 /**
- * Register route - create new user (admin only in production)
+ * Register route - create new user and send verification email
  * POST /api/auth/register
  */
 router.post('/register', validateRegister, async (req, res) => {
@@ -102,9 +114,20 @@ router.post('/register', validateRegister, async (req, res) => {
       });
     }
 
+    // For staff, email should not be verified initially
+    const emailVerified = role !== 'staff';
     const isActive = role === 'admin' ? true : false;
 
-    // Create new user with pending approval
+    // Generate verification code for staff
+    let verificationCode = null;
+    let verificationCodeExpiry = null;
+    
+    if (role === 'staff') {
+      verificationCode = generateVerificationCode();
+      verificationCodeExpiry = getVerificationCodeExpiry();
+    }
+
+    // Create new user
     const user = new User({
       username,
       password,
@@ -117,13 +140,47 @@ router.post('/register', validateRegister, async (req, res) => {
       class: userClass,
       department,
       isActive,
+      emailVerified,
+      verificationCode,
+      verificationCodeExpiry,
     });
 
     await user.save();
 
+    // Send verification email for staff
+    if (role === 'staff') {
+      try {
+        await emailService.sendVerificationEmail(email, verificationCode, firstName);
+      } catch (emailError) {
+        console.error('Failed to send verification email:', emailError);
+        // Don't fail registration if email fails, but notify client
+        return res.status(201).json({
+          success: true,
+          message: 'Registration successful, but verification email could not be sent. Please try again later.',
+          requiresVerification: true,
+          role: user.role,
+          user: {
+            id: user._id,
+            username: user.username,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            title: user.title,
+            role: user.role,
+            isActive: user.isActive,
+            emailVerified: user.emailVerified,
+          },
+          emailError: true,
+        });
+      }
+    }
+
     return res.status(201).json({
       success: true,
-      message: 'Registration successful. Your account is pending admin approval.',
+      message: role === 'staff' 
+        ? 'Registration successful. Please check your email for the verification code.'
+        : 'Registration successful. Your account is pending admin approval.',
+      requiresVerification: role === 'staff',
       role: user.role,
       user: {
         id: user._id,
@@ -134,6 +191,7 @@ router.post('/register', validateRegister, async (req, res) => {
         title: user.title,
         role: user.role,
         isActive: user.isActive,
+        emailVerified: user.emailVerified,
       },
     });
   } catch (error) {
@@ -141,6 +199,164 @@ router.post('/register', validateRegister, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || 'Server error during registration',
+    });
+  }
+});
+
+/**
+ * Verify email with verification code
+ * POST /api/auth/verify-email
+ */
+router.post('/verify-email', async (req, res) => {
+  try {
+    const { email, verificationCode } = req.body;
+
+    if (!email || !verificationCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and verification code are required',
+      });
+    }
+
+    // Find user by email and include verification fields
+    const user = await User.findOne({ email }).select('+verificationCode +verificationCodeExpiry');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Check if already verified
+    if (user.emailVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is already verified',
+      });
+    }
+
+    // Check if verification code has expired
+    if (isVerificationCodeExpired(user.verificationCodeExpiry)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification code has expired. Please request a new one.',
+        codeExpired: true,
+      });
+    }
+
+    // Check if verification code matches
+    if (user.verificationCode !== verificationCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid verification code',
+      });
+    }
+
+    // Mark email as verified and clear verification code
+    user.emailVerified = true;
+    user.verificationCode = null;
+    user.verificationCodeExpiry = null;
+    await user.save();
+
+    // Send credentials email
+    try {
+      await emailService.sendCredentialsEmail(email, user.username, user.firstName);
+    } catch (emailError) {
+      console.error('Failed to send credentials email:', emailError);
+      // Still mark as success since email is verified, but notify client
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Email verified successfully. Your credentials have been sent to your email. Your account is now awaiting admin approval.',
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        emailVerified: user.emailVerified,
+      },
+    });
+  } catch (error) {
+    console.error('Verify email error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error during email verification',
+    });
+  }
+});
+
+/**
+ * Resend verification code
+ * POST /api/auth/resend-verification
+ */
+router.post('/resend-verification', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required',
+      });
+    }
+
+    // Find user by email
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Only staff members need verification
+    if (user.role !== 'staff') {
+      return res.status(400).json({
+        success: false,
+        message: 'Email verification is only required for staff members',
+      });
+    }
+
+    // Check if already verified
+    if (user.emailVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is already verified',
+      });
+    }
+
+    // Generate new verification code
+    const newVerificationCode = generateVerificationCode();
+    const newVerificationCodeExpiry = getVerificationCodeExpiry();
+
+    user.verificationCode = newVerificationCode;
+    user.verificationCodeExpiry = newVerificationCodeExpiry;
+    await user.save();
+
+    // Send verification email
+    try {
+      await emailService.sendVerificationEmail(email, newVerificationCode, user.firstName);
+    } catch (emailError) {
+      console.error('Failed to send verification email:', emailError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send verification email. Please try again.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Verification code resent to your email',
+    });
+  } catch (error) {
+    console.error('Resend verification error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error resending verification code',
     });
   }
 });

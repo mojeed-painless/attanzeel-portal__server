@@ -59,6 +59,19 @@ const userSchema = new mongoose.Schema(
         return this.role !== 'staff'; // Staff start inactive (pending approval), others active
       },
     },
+    // Email verification fields
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    verificationCode: {
+      type: String,
+      select: false, // Don't return by default
+    },
+    verificationCodeExpiry: {
+      type: Date,
+      select: false, // Don't return by default
+    },
       // Profile information fields
       dateOfBirth: {
         type: String,
