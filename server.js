@@ -37,18 +37,53 @@ app.use(helmet({
 const defaultAllowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
-  'https://portal.attanzeel.com'
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173',
+  'https://portal.attanzeel.com',
+  'https://attanzeel-portal-server.onrender.com',
+  'https://attanzeel-portal-client.onrender.com',
 ];
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean)
-  : defaultAllowedOrigins
-).concat('https://portal.attanzeel.com').filter((origin, index, self) => self.indexOf(origin) === index);
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+
+  const normalizedOrigin = origin.replace(/\/+$/, '');
+  const configuredOrigins = (process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean)
+    : []
+  );
+
+  const allowedPatterns = [
+    ...defaultAllowedOrigins,
+    ...configuredOrigins,
+    'https://portal.attanzeel.com',
+  ];
+
+  if (allowedPatterns.includes(normalizedOrigin)) {
+    return true;
+  }
+
+  return [
+    /^https?:\/\/localhost(:\d+)?$/,
+    /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
+    /^https?:\/\/.*\.vercel\.app$/,
+    /^https?:\/\/.*\.netlify\.app$/,
+    /^https?:\/\/.*\.onrender\.com$/,
+    /^https?:\/\/.*\.attanzeel\.com$/,
+  ].some((pattern) => pattern.test(normalizedOrigin));
+};
+
+const allowedOrigins = [...new Set([
+  ...defaultAllowedOrigins,
+  ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean) : []),
+  'https://portal.attanzeel.com',
+  'https://attanzeel-portal-server.onrender.com',
+  'https://attanzeel-portal-client.onrender.com',
+])];
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl)
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+    if (isAllowedOrigin(origin)) {
       callback(null, true);
     } else {
       console.error(`CORS Blocked: Origin ${origin} not in ALLOWED_ORIGINS`);
@@ -57,9 +92,11 @@ const corsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+  optionsSuccessStatus: 200,
 };
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // Rate limiting
 const limiter = rateLimit({
