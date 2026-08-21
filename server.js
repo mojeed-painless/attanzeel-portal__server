@@ -96,7 +96,8 @@ const corsOptions = {
   optionsSuccessStatus: 200,
 };
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+// Express 5/path-to-regexp requires a valid route pattern for OPTIONS; regex avoids the '*'-path crash.
+app.options(/^(.*)$/, cors(corsOptions));
 
 // Rate limiting
 const limiter = rateLimit({
