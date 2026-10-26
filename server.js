@@ -100,18 +100,25 @@ app.use(cors(corsOptions));
 app.options(/^(.*)$/, cors(corsOptions));
 
 // Rate limiting
+const globalRateLimitWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000;
+const authRateLimitWindowMs = Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000;
+const globalRateLimitMax = Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 200;
+const authRateLimitMax = Number(process.env.AUTH_RATE_LIMIT_MAX_REQUESTS) || 30;
+
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+  windowMs: globalRateLimitWindowMs,
+  max: globalRateLimitMax,
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10, // Increased slightly for usability
+  windowMs: authRateLimitWindowMs,
+  max: authRateLimitMax,
   message: 'Too many login attempts, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 app.use(limiter);
