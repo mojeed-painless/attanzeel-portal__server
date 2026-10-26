@@ -15,6 +15,11 @@ const userSchema = new mongoose.Schema(
       required: [true, 'Please provide a password'],
       select: false, // Don't return password by default
     },
+    temporaryPassword: {
+      type: String,
+      select: false,
+      default: null,
+    },
     email: {
       type: String,
       unique: true,
@@ -47,7 +52,17 @@ const userSchema = new mongoose.Schema(
     },
     class: {
       type: String,
-      sparse: true, // Only required for students
+      sparse: true, // Legacy single-class value for compatibility
+    },
+    classes: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: function(value) {
+          return value.every((item) => typeof item === 'string' && item.trim().length > 0);
+        },
+        message: 'Assigned classes must be non-empty strings',
+      },
     },
     department: {
       type: String,

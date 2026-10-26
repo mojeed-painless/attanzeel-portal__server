@@ -85,6 +85,7 @@ router.post('/login', validateLogin, async (req, res) => {
         role: user.role,
         admissionNumber: user.admissionNumber,
         class: user.class,
+        classes: Array.isArray(user.classes) ? user.classes : (user.class ? [user.class] : []),
         department: user.department,
       },
     });
@@ -131,6 +132,7 @@ router.post('/register', validateRegister, async (req, res) => {
     const user = new User({
       username,
       password,
+      temporaryPassword: password,
       email,
       firstName,
       lastName,
@@ -219,7 +221,7 @@ router.post('/verify-email', async (req, res) => {
     }
 
     // Find user by email and include verification fields
-    const user = await User.findOne({ email }).select('+verificationCode +verificationCodeExpiry');
+    const user = await User.findOne({ email }).select('+verificationCode +verificationCodeExpiry +temporaryPassword');
 
     if (!user) {
       return res.status(404).json({
@@ -253,15 +255,18 @@ router.post('/verify-email', async (req, res) => {
       });
     }
 
+    const passwordToSend = user.temporaryPassword || null;
+
     // Mark email as verified and clear verification code
     user.emailVerified = true;
     user.verificationCode = null;
     user.verificationCodeExpiry = null;
+    user.temporaryPassword = null;
     await user.save();
 
     // Send credentials email
     try {
-      await emailService.sendCredentialsEmail(email, user.username, user.firstName);
+      await emailService.sendCredentialsEmail(email, user.username, user.firstName, passwordToSend, user.class, user.department);
     } catch (emailError) {
       console.error('Failed to send credentials email:', emailError);
       // Still mark as success since email is verified, but notify client

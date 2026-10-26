@@ -19,7 +19,7 @@ router.get('/', authMiddleware, async (req, res) => {
     }
 
     const staff = await User.find({ role: 'staff' })
-      .select('_id firstName lastName title email username class isActive createdAt')
+      .select('_id firstName lastName title email username class classes role isActive createdAt')
       .sort('-createdAt');
 
     return res.status(200).json({
@@ -31,7 +31,9 @@ router.get('/', authMiddleware, async (req, res) => {
         title: s.title,
         email: s.email,
         username: s.username,
-        classes: s.class,
+        role: s.role,
+        class: s.class,
+        classes: Array.isArray(s.classes) ? s.classes : (s.class ? [s.class] : []),
         isActive: s.isActive,
         createdAt: s.createdAt
       })),
@@ -78,7 +80,9 @@ router.get('/:staffId', authMiddleware, async (req, res) => {
         title: staff.title,
         email: staff.email,
         username: staff.username,
-        classes: staff.class,
+        role: staff.role,
+        class: staff.class,
+        classes: Array.isArray(staff.classes) ? staff.classes : (staff.class ? [staff.class] : []),
         isActive: staff.isActive,
         createdAt: staff.createdAt,
         updatedAt: staff.updatedAt
@@ -180,6 +184,59 @@ router.delete('/:staffId', authMiddleware, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Server error deleting staff'
+    });
+  }
+});
+
+/**
+ * Update staff assigned classes (admin only)
+ * PATCH /api/staff/:staffId/classes
+ */
+router.patch('/:staffId/classes', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only admins can update staff class assignments'
+      });
+    }
+
+    const { classes } = req.body;
+    const normalizedClasses = Array.isArray(classes)
+      ? [...new Set(classes.map((item) => String(item).trim()).filter(Boolean))]
+      : [];
+
+    const staff = await User.findById(req.params.staffId);
+
+    if (!staff || staff.role !== 'staff') {
+      return res.status(404).json({
+        success: false,
+        message: 'Staff member not found'
+      });
+    }
+
+    staff.classes = normalizedClasses;
+    staff.class = normalizedClasses.length ? normalizedClasses[0] : '';
+    await staff.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Staff assigned classes updated successfully',
+      staff: {
+        id: staff._id,
+        username: staff.username,
+        firstName: staff.firstName,
+        lastName: staff.lastName,
+        role: staff.role,
+        class: staff.class,
+        classes: staff.classes,
+      }
+    });
+  } catch (error) {
+    console.error('Update staff classes error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error updating staff class assignments'
     });
   }
 });
