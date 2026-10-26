@@ -34,16 +34,6 @@ router.post('/login', validateLogin, async (req, res) => {
       });
     }
 
-    // Check if email is verified (for staff)
-    if (user.role === 'staff' && !user.emailVerified) {
-      return res.status(403).json({
-        success: false,
-        message: 'email_not_verified',
-        email: user.email,
-        requiresVerification: true,
-      });
-    }
-
     // Check if user is active
     if (!user.isActive) {
       return res.status(403).json({
